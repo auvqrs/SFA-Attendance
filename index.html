@@ -1,0 +1,999 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enterprise Attendance Portal</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght=300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #0f172a; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col antialiased">
+
+    <div id="login-screen" class="flex-1 flex items-center justify-center p-6">
+        <div class="w-full max-w-md bg-white border border-slate-200/80 rounded-2xl p-8 shadow-sm">
+            <div class="mb-8 text-center">
+                <div class="inline-flex p-3 bg-slate-50 border border-slate-100 rounded-xl mb-3 text-slate-800">
+                    <i data-lucide="shield-check" class="w-6 h-6"></i>
+                </div>
+                <h1 class="text-xl font-semibold tracking-tight">Portal Authentication</h1>
+                <p class="text-sm text-slate-500 mt-1">Please enter your training credentials</p>
+            </div>
+            
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-medium uppercase tracking-wider text-slate-500 mb-1.5">Teaching Name</label>
+                    <input type="text" id="login-name" required class="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50/50 focus:outline-none focus:border-slate-400 focus:bg-white transition-all" placeholder="e.g. Dr. A. Smith">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium uppercase tracking-wider text-slate-500 mb-1.5">Account Tier</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button type="button" id="tier-staff" class="py-2 text-sm font-medium rounded-lg border border-slate-900 bg-slate-900 text-white transition-all cursor-pointer text-center">Staff Profile</button>
+                        <button type="button" id="tier-slt" class="py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-all cursor-pointer text-center">SLT Admin</button>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium uppercase tracking-wider text-slate-500 mb-1.5">Access Password</label>
+                    <input type="password" id="login-password" required class="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50/50 focus:outline-none focus:border-slate-400 focus:bg-white transition-all" placeholder="••••••••">
+                </div>
+                <div id="login-error" class="text-xs text-red-500 hidden mt-1 flex items-center gap-1">
+                    <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> Invalid credentials for this selection tier.
+                </div>
+                <button type="submit" class="w-full py-2.5 bg-slate-900 text-white hover:bg-slate-800 rounded-lg text-sm font-medium transition-all cursor-pointer mt-2 flex items-center justify-center gap-2">
+                    Access Platform <i data-lucide="arrow-right" class="w-4 h-4"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div id="app-screen" class="hidden flex-1 flex flex-col">
+        <header class="bg-white border-b border-slate-200/80 px-6 py-4 flex items-center justify-between sticky top-0 z-40">
+            <div class="flex items-center gap-6">
+                <div class="font-semibold text-base tracking-tight flex items-center gap-2">
+                    <span class="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Attendance Core
+                </div>
+                <span id="role-badge" class="text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200/60">STAFF</span>
+                
+                <div class="relative hidden lg:block ml-4">
+                    <div class="relative">
+                        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                        <input type="text" id="global-search" placeholder="Search staff, sessions, or type 'absences'..." class="w-72 pl-9 pr-4 py-1.5 text-sm border border-slate-200 rounded-full bg-slate-50 focus:bg-white focus:outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100 transition-all">
+                    </div>
+                    <div id="search-results-dropdown" class="absolute top-full mt-2 w-[400px] bg-white border border-slate-200 rounded-xl shadow-xl hidden z-50 max-h-96 overflow-y-auto custom-scrollbar flex flex-col divide-y divide-slate-100">
+                        </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-6">
+                <nav class="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-sm font-medium">
+                    <button id="nav-calendar" class="px-4 py-1.5 rounded-md bg-white text-slate-900 shadow-xs cursor-pointer flex items-center gap-1.5"><i data-lucide="calendar" class="w-4 h-4"></i> Schedule Grid</button>
+                    <button id="nav-analytics" class="px-4 py-1.5 rounded-md text-slate-600 hover:text-slate-900 transition-all cursor-pointer flex items-center gap-1.5"><i data-lucide="bar-chart-3" class="w-4 h-4"></i> HR Analytics</button>
+                </nav>
+                <div class="flex items-center gap-3 border-l border-slate-200 pl-6">
+                    <div class="text-right hidden sm:block">
+                        <div id="user-display-name" class="text-sm font-medium text-slate-900">-</div>
+                        <div id="user-display-role" class="text-xs text-slate-400">Loading profile...</div>
+                    </div>
+                    <button id="btn-logout" class="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all cursor-pointer text-slate-500" title="Sign Out">
+                        <i data-lucide="log-out" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 p-6 max-w-7xl w-full mx-auto">
+            
+            <section id="view-calendar" class="space-y-6">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-4 border border-slate-200/80 rounded-xl shadow-xs">
+                    <div class="flex items-center gap-3">
+                        <button id="cal-prev" class="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all cursor-pointer"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+                        <h2 id="cal-title" class="text-lg font-semibold tracking-tight min-w-[160px] text-center">Loading...</h2>
+                        <button id="cal-next" class="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 transition-all cursor-pointer"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button id="view-month" class="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-900 bg-slate-900 text-white cursor-pointer">Month</button>
+                        <button id="view-week" class="px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 cursor-pointer">Week</button>
+                    </div>
+                </div>
+
+                <div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-xs">
+                    <div class="grid grid-cols-7 border-b border-slate-100 bg-slate-50/70 text-center text-xs font-semibold tracking-wider text-slate-500 py-3">
+                        <div>SUN</div><div>MON</div><div>TUE</div><div>WED</div><div>THU</div><div>FRI</div><div>SAT</div>
+                    </div>
+                    <div id="calendar-grid" class="grid grid-cols-7 bg-slate-200 gap-[1px]">
+                        </div>
+                </div>
+            </section>
+
+            <section id="view-analytics" class="hidden space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Total Tracked Sessions</div>
+                        <div id="stat-total-sessions" class="text-3xl font-bold tracking-tight text-slate-900 mt-2">0</div>
+                    </div>
+                    <div class="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Session Att. Rate</div>
+                        <div id="stat-session-rate" class="text-3xl font-bold tracking-tight text-emerald-600 mt-2">0%</div>
+                    </div>
+                    <div class="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Debrief Att. Rate</div>
+                        <div id="stat-debrief-rate" class="text-3xl font-bold tracking-tight text-indigo-600 mt-2">0%</div>
+                    </div>
+                    <div class="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs flex flex-col justify-between">
+                        <div class="text-xs font-semibold uppercase tracking-wider text-slate-400">Unexcused Absences</div>
+                        <div id="stat-unexcused" class="text-3xl font-bold tracking-tight text-rose-600 mt-2">0</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs">
+                        <h3 class="text-sm font-semibold tracking-tight text-slate-900 mb-4">Attendance Volume (Last 5 Sessions)</h3>
+                        <div class="relative h-64 w-full">
+                            <canvas id="chart-attendance-trend"></canvas>
+                        </div>
+                    </div>
+                    <div class="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs flex flex-col">
+                        <h3 class="text-sm font-semibold tracking-tight text-slate-900 mb-4">Punctuality: SLT vs Staff</h3>
+                        <div class="relative flex-1 flex justify-center w-full min-h-[250px]">
+                            <canvas id="chart-role-comparison"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs lg:col-span-2">
+                        <h3 class="text-sm font-semibold tracking-tight text-slate-900 mb-4">Historical Tracking Feed</h3>
+                        <div class="overflow-x-auto max-h-80 custom-scrollbar relative">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-slate-50 text-slate-500 font-medium border-b border-slate-100 text-xs uppercase tracking-wider sticky top-0">
+                                    <tr>
+                                        <th class="py-2.5 px-4">Date</th>
+                                        <th class="py-2.5 px-4">Session Context/Host</th>
+                                        <th class="py-2.5 px-4 text-center">Session Att.</th>
+                                        <th class="py-2.5 px-4 text-center">Debrief Att.</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="analytics-table-body" class="divide-y divide-slate-100 text-slate-700">
+                                    </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white border border-slate-200/80 rounded-xl p-5 shadow-xs flex flex-col">
+                        <h3 class="text-sm font-semibold tracking-tight text-slate-900 mb-4">HR Flags: Most Absent</h3>
+                        <div id="hr-flags-container" class="flex-1 space-y-3 overflow-y-auto custom-scrollbar">
+                            </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div id="modal-day" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white border border-slate-200 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col shadow-xl overflow-hidden">
+            <div class="p-5 border-b border-slate-200/80 flex items-center justify-between bg-slate-50">
+                <div>
+                    <div id="modal-date-hdr" class="text-base font-semibold tracking-tight text-slate-900">-</div>
+                    <p class="text-xs text-slate-500">Daily session metrics and register control</p>
+                </div>
+                <button onclick="closeDayModal()" class="p-1.5 border border-slate-200 rounded-lg hover:bg-slate-200 cursor-pointer text-slate-500 transition-all"><i data-lucide="x" class="w-4 h-4"></i></button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-6 flex flex-col lg:flex-row gap-6 custom-scrollbar">
+                <div class="w-full lg:w-1/3 space-y-4">
+                    <div class="flex items-center justify-between">
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-400">Active Sessions</h4>
+                        <button id="btn-show-create-session" onclick="toggleCreatePanel(true)" class="hidden text-xs font-semibold text-slate-900 hover:underline cursor-pointer flex items-center gap-1"><i data-lucide="plus" class="w-3.5 h-3.5"></i> Create</button>
+                    </div>
+                    
+                    <div id="panel-create-session" class="hidden p-3 border border-slate-200 bg-slate-50/50 rounded-xl space-y-3">
+                        <div class="text-xs font-semibold">New Session Parameters</div>
+                        <input type="text" id="new-session-title" placeholder="Session Title" class="w-full px-3 py-1.5 text-xs border border-slate-200 bg-white rounded-md focus:outline-none">
+                        <div class="flex gap-2">
+                            <button onclick="submitNewSession()" class="flex-1 py-1.5 bg-slate-900 text-white font-medium rounded-md text-xs cursor-pointer">Host Session</button>
+                            <button onclick="toggleCreatePanel(false)" class="px-2.5 py-1.5 border border-slate-200 bg-white rounded-md text-xs cursor-pointer">Cancel</button>
+                        </div>
+                    </div>
+
+                    <div id="session-list-group" class="space-y-2"></div>
+                </div>
+
+                <div class="flex-1 flex flex-col border border-slate-200 rounded-xl overflow-hidden bg-white">
+                    <div class="p-4 bg-slate-50/80 border-b border-slate-200 flex items-center justify-between">
+                        <div>
+                            <h4 id="active-register-title" class="text-sm font-semibold text-slate-900">Select a session</h4>
+                            <p id="active-register-host" class="text-xs text-slate-400"></p>
+                        </div>
+                        <button id="btn-save-attendance" class="hidden px-3 py-1.5 bg-slate-900 text-white font-medium text-xs rounded-md shadow-xs hover:bg-slate-800 transition-all cursor-pointer flex items-center gap-1.5">
+                            <i data-lucide="save" class="w-3.5 h-3.5"></i> Save Roster
+                        </button>
+                    </div>
+                    
+                    <div class="flex-1 overflow-y-auto custom-scrollbar min-h-[300px]">
+                        <div class="grid grid-cols-12 bg-slate-100 px-4 py-2 text-[11px] font-bold tracking-wider text-slate-500 uppercase sticky top-0 border-b border-slate-200 z-10">
+                            <div class="col-span-6">Staff Member / Role</div>
+                            <div class="col-span-3 text-center">Session</div>
+                            <div class="col-span-3 text-center">Debrief</div>
+                        </div>
+                        <div id="attendance-roster-rows" class="divide-y divide-slate-100"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-profile" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-4 hidden">
+        <div class="bg-white border border-slate-200 rounded-2xl w-full max-w-2xl flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div class="p-6 border-b border-slate-200/80 bg-slate-50 relative overflow-hidden">
+                <div class="absolute -right-6 -top-6 text-slate-200 opacity-50"><i data-lucide="user-circle" class="w-32 h-32"></i></div>
+                <div class="relative z-10 flex justify-between items-start">
+                    <div class="flex items-center gap-4">
+                        <div class="h-16 w-16 rounded-full bg-slate-900 text-white flex items-center justify-center text-xl font-bold shadow-sm" id="profile-initials"></div>
+                        <div>
+                            <h2 id="profile-name" class="text-xl font-bold text-slate-900 tracking-tight"></h2>
+                            <span id="profile-role" class="inline-block mt-1 px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-widest bg-slate-200 text-slate-700"></span>
+                        </div>
+                    </div>
+                    <button onclick="closeProfileModal()" class="p-1.5 border border-slate-200 bg-white rounded-lg hover:bg-slate-100 cursor-pointer text-slate-500 transition-all"><i data-lucide="x" class="w-4 h-4"></i></button>
+                </div>
+            </div>
+            
+            <div class="p-6 space-y-6 overflow-y-auto max-h-[70vh] custom-scrollbar">
+                <div class="grid grid-cols-3 gap-4">
+                    <div class="border border-slate-200 rounded-xl p-4 bg-white text-center">
+                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Overall Att.</div>
+                        <div id="profile-stat-overall" class="text-2xl font-bold text-slate-900 mt-1">-</div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl p-4 bg-white text-center">
+                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Sessions</div>
+                        <div id="profile-stat-sessions" class="text-2xl font-bold text-slate-900 mt-1">-</div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl p-4 bg-white text-center">
+                        <div class="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Unexcused (U)</div>
+                        <div id="profile-stat-u" class="text-2xl font-bold text-rose-600 mt-1">-</div>
+                    </div>
+                </div>
+
+                <div class="border border-slate-200 rounded-xl p-5 bg-white">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-sm font-semibold tracking-tight text-slate-900">Personal Attendance Trend</h3>
+                        <span id="profile-trend-badge" class="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 text-slate-600">Calculating...</span>
+                    </div>
+                    <div class="h-40 w-full relative">
+                        <canvas id="chart-staff-profile"></canvas>
+                    </div>
+                </div>
+
+                <div class="border border-slate-200 rounded-xl overflow-hidden">
+                    <div class="bg-slate-50 px-4 py-2.5 border-b border-slate-200 text-xs font-semibold text-slate-700">Recent Session History</div>
+                    <div id="profile-history-list" class="divide-y divide-slate-100 max-h-48 overflow-y-auto custom-scrollbar">
+                        </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- SUPABASE CONFIG ---
+        const CONFIG = {
+            staffDb: {
+                url: "https://fmeffmhwxkxftomdvuce.supabase.co",
+                key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZtZWZmbWh3eGt4ZnRvbWR2dWNlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4OTczOTIsImV4cCI6MjA5MTQ3MzM5Mn0.bEBGVGjie7BPY-y9yKScygd5YVgvkJp_JvLiUD1yaKw"
+            },
+            dataDb: {
+                url: "https://drqtryzrckqratplzlgn.supabase.co",
+                key: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRycXRyeXpyY2txcmF0cGx6bGduIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk4ODExOTEsImV4cCI6MjA5NTQ1NzE5MX0.4WTIYz34LWYjrg_520ObXJm4NC3CSezHLg1XiAamzTM"
+            }
+        };
+
+        const sbStaff = supabase.createClient(CONFIG.staffDb.url, CONFIG.staffDb.key);
+        const sbData = supabase.createClient(CONFIG.dataDb.url, CONFIG.dataDb.key);
+
+        // --- GLOBAL STATE ---
+        let state = {
+            user: null,         
+            role: null,         
+            viewMode: 'month',  
+            currentDate: new Date(), // Automatically initializes to Today's actual date!
+            staffList: [],      
+            sessions: [],       
+            attendance: [],     
+            selectedDateStr: null,
+            selectedSessionId: null
+        };
+
+        const ATTENDANCE_CODES = ["P", "L", "E", "U", "N/A", "ED", "NF", "LOA", "EMG", "S", "HT / T"];
+        
+        // Chart instances dictionary to allow safe re-rendering without memory leaks
+        window.chartRegistry = {};
+
+        // --- BOOT & EVENTS ---
+        document.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
+            setupLoginHandlers();
+            setupNavigation();
+            setupCalendarControls();
+            setupGlobalSearch();
+        });
+
+        function setupLoginHandlers() {
+            const tierStaff = document.getElementById('tier-staff');
+            const tierSlt = document.getElementById('tier-slt');
+            let selectedTier = 'STAFF';
+
+            tierStaff.addEventListener('click', () => {
+                selectedTier = 'STAFF';
+                tierStaff.className = "py-2 text-sm font-medium rounded-lg border border-slate-900 bg-slate-900 text-white transition-all cursor-pointer text-center";
+                tierSlt.className = "py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-all cursor-pointer text-center";
+            });
+
+            tierSlt.addEventListener('click', () => {
+                selectedTier = 'SLT';
+                tierSlt.className = "py-2 text-sm font-medium rounded-lg border border-slate-900 bg-slate-900 text-white transition-all cursor-pointer text-center";
+                tierStaff.className = "py-2 text-sm font-medium rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-all cursor-pointer text-center";
+            });
+
+            document.getElementById('login-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const name = document.getElementById('login-name').value.trim();
+                const pass = document.getElementById('login-password').value;
+                const errDiv = document.getElementById('login-error');
+                errDiv.classList.add('hidden');
+
+                if (selectedTier === 'STAFF' && pass === 'staff') {
+                    bootApp(name, 'STAFF');
+                } else if (selectedTier === 'SLT' && pass === 'admin26') {
+                    bootApp(name, 'SLT');
+                } else {
+                    errDiv.classList.remove('hidden');
+                }
+            });
+
+            document.getElementById('btn-logout').addEventListener('click', () => location.reload());
+        }
+
+        async function bootApp(username, userRole) {
+            state.user = username;
+            state.role = userRole;
+
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('app-screen').classList.remove('hidden');
+
+            document.getElementById('user-display-name').textContent = username;
+            document.getElementById('user-display-role').textContent = userRole === 'SLT' ? 'Senior Leadership Team' : 'Teaching Staff Member';
+            
+            const badge = document.getElementById('role-badge');
+            badge.textContent = userRole;
+            if(userRole === 'SLT') {
+                badge.className = "text-[10px] uppercase font-bold tracking-widest px-2 py-0.5 rounded-full bg-slate-900 text-white border border-slate-900";
+                document.getElementById('btn-show-create-session').classList.remove('hidden');
+                document.getElementById('btn-save-attendance').classList.remove('hidden');
+            }
+
+            await fetchStaffRoster();
+            await refreshDataCache();
+            renderCalendarGrid();
+            calculateAnalytics();
+        }
+
+        // --- NAVIGATION ---
+        function setupNavigation() {
+            const navCal = document.getElementById('nav-calendar');
+            const navAnalytic = document.getElementById('nav-analytics');
+            const viewCal = document.getElementById('view-calendar');
+            const viewAnalytic = document.getElementById('view-analytics');
+
+            navCal.addEventListener('click', () => {
+                navCal.className = "px-4 py-1.5 rounded-md bg-white text-slate-900 shadow-xs cursor-pointer flex items-center gap-1.5";
+                navAnalytic.className = "px-4 py-1.5 rounded-md text-slate-600 hover:text-slate-900 transition-all cursor-pointer flex items-center gap-1.5";
+                viewCal.classList.remove('hidden');
+                viewAnalytic.classList.add('hidden');
+                renderCalendarGrid();
+            });
+
+            navAnalytic.addEventListener('click', () => {
+                navAnalytic.className = "px-4 py-1.5 rounded-md bg-white text-slate-900 shadow-xs cursor-pointer flex items-center gap-1.5";
+                navCal.className = "px-4 py-1.5 rounded-md text-slate-600 hover:text-slate-900 transition-all cursor-pointer flex items-center gap-1.5";
+                viewAnalytic.classList.remove('hidden');
+                viewCal.classList.add('hidden');
+                calculateAnalytics();
+            });
+        }
+
+        // --- DATA FETCHING ---
+        async function fetchStaffRoster() {
+            try {
+                const { data, error } = await sbStaff.from('staff').select('full_name, role').order('full_name', { ascending: true });
+                if (!error) state.staffList = data || [];
+            } catch (err) { console.error("Staff fetch error:", err); }
+        }
+
+        async function refreshDataCache() {
+            try {
+                const { data: sess } = await sbData.from('sessions').select('*');
+                state.sessions = sess || [];
+                const { data: att } = await sbData.from('attendance').select('*');
+                state.attendance = att || [];
+            } catch (err) { console.error("Data cache error:", err); }
+        }
+
+        // --- CALENDAR LOGIC ---
+        function setupCalendarControls() {
+            document.getElementById('cal-prev').addEventListener('click', () => adjustCalendarViewOffset(-1));
+            document.getElementById('cal-next').addEventListener('click', () => adjustCalendarViewOffset(1));
+            
+            const vMonth = document.getElementById('view-month');
+            const vWeek = document.getElementById('view-week');
+
+            vMonth.addEventListener('click', () => {
+                state.viewMode = 'month';
+                vMonth.className = "px-3 py-1.5 text-xs font-medium rounded-md border border-slate-900 bg-slate-900 text-white cursor-pointer";
+                vWeek.className = "px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 cursor-pointer";
+                renderCalendarGrid();
+            });
+            vWeek.addEventListener('click', () => {
+                state.viewMode = 'week';
+                vWeek.className = "px-3 py-1.5 text-xs font-medium rounded-md border border-slate-900 bg-slate-900 text-white cursor-pointer";
+                vMonth.className = "px-3 py-1.5 text-xs font-medium rounded-md border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 cursor-pointer";
+                renderCalendarGrid();
+            });
+        }
+
+        function adjustCalendarViewOffset(direction) {
+            if (state.viewMode === 'month') {
+                state.currentDate.setMonth(state.currentDate.getMonth() + direction);
+            } else {
+                state.currentDate.setDate(state.currentDate.getDate() + (direction * 7));
+            }
+            renderCalendarGrid();
+        }
+
+        function renderCalendarGrid() {
+            const grid = document.getElementById('calendar-grid');
+            grid.innerHTML = '';
+            const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+            
+            if (state.viewMode === 'month') {
+                const year = state.currentDate.getFullYear();
+                const month = state.currentDate.getMonth();
+                document.getElementById('cal-title').textContent = `${monthNames[month]} ${year}`;
+
+                const firstDayIndex = new Date(year, month, 1).getDay();
+                const totalDays = new Date(year, month + 1, 0).getDate();
+                const prevMonthTotalDays = new Date(year, month, 0).getDate();
+
+                for (let i = firstDayIndex - 1; i >= 0; i--) {
+                    grid.appendChild(createDayCell(year, month - 1, prevMonthTotalDays - i, false));
+                }
+                for (let d = 1; d <= totalDays; d++) {
+                    grid.appendChild(createDayCell(year, month, d, true));
+                }
+                const balanceCells = 42 - grid.children.length;
+                for (let d = 1; d <= balanceCells; d++) {
+                    grid.appendChild(createDayCell(year, month + 1, d, false));
+                }
+            } else {
+                const currentDayOfWeek = state.currentDate.getDay();
+                const startOfWeek = new Date(state.currentDate);
+                startOfWeek.setDate(state.currentDate.getDate() - currentDayOfWeek);
+                
+                document.getElementById('cal-title').textContent = `Wk of ${startOfWeek.getDate()} ${monthNames[startOfWeek.getMonth()]}`;
+
+                for (let i = 0; i < 7; i++) {
+                    const activeDay = new Date(startOfWeek);
+                    activeDay.setDate(startOfWeek.getDate() + i);
+                    grid.appendChild(createDayCell(activeDay.getFullYear(), activeDay.getMonth(), activeDay.getDate(), true, true));
+                }
+            }
+        }
+
+        function createDayCell(year, month, day, isCurrentMonth, isWeekMode = false) {
+            // Adjust for JS Date auto-rolling over months properly
+            const dObj = new Date(year, month, day);
+            const y = dObj.getFullYear();
+            const m = String(dObj.getMonth() + 1).padStart(2, '0');
+            const d = String(dObj.getDate()).padStart(2, '0');
+            const isoStr = `${y}-${m}-${d}`;
+            
+            const cell = document.createElement('div');
+            cell.className = `bg-white min-h-[110px] p-2 flex flex-col justify-between group hover:bg-slate-50/80 transition-all cursor-pointer ${!isCurrentMonth ? 'opacity-40 bg-slate-50/40 text-slate-400' : ''}`;
+            if(isWeekMode) cell.className += " min-h-[320px]";
+
+            cell.onclick = () => openDayModal(isoStr);
+
+            const dayNumLabel = document.createElement('div');
+            dayNumLabel.className = "text-xs font-medium self-start";
+            dayNumLabel.textContent = dObj.getDate();
+
+            const rightNow = new Date();
+            const todayIso = `${rightNow.getFullYear()}-${String(rightNow.getMonth()+1).padStart(2,'0')}-${String(rightNow.getDate()).padStart(2,'0')}`;
+            
+            if(todayIso === isoStr) {
+                dayNumLabel.className = "text-xs font-bold bg-emerald-500 text-white h-5 w-5 rounded-full flex items-center justify-center shadow-xs";
+            }
+
+            const sessionsContainer = document.createElement('div');
+            sessionsContainer.className = "mt-2 space-y-1 overflow-hidden flex-1 custom-scrollbar";
+
+            const daySessions = state.sessions.filter(s => s.session_date === isoStr);
+            daySessions.forEach(s => {
+                const sBadge = document.createElement('div');
+                sBadge.className = "text-[10px] font-medium px-1.5 py-0.5 rounded-sm bg-slate-100 text-slate-800 border border-slate-200 truncate";
+                sBadge.textContent = s.session_title;
+                sessionsContainer.appendChild(sBadge);
+            });
+
+            cell.appendChild(dayNumLabel);
+            cell.appendChild(sessionsContainer);
+            return cell;
+        }
+
+        // --- GLOBAL SEARCH ENGINE (HR) ---
+        function setupGlobalSearch() {
+            const input = document.getElementById('global-search');
+            const dropdown = document.getElementById('search-results-dropdown');
+
+            // Hide dropdown when clicking outside
+            document.addEventListener('click', (e) => {
+                if(!input.contains(e.target) && !dropdown.contains(e.target)) {
+                    dropdown.classList.add('hidden');
+                }
+            });
+
+            input.addEventListener('input', (e) => {
+                const q = e.target.value.toLowerCase().trim();
+                if(q.length < 2) {
+                    dropdown.classList.add('hidden');
+                    return;
+                }
+
+                dropdown.innerHTML = '';
+                dropdown.classList.remove('hidden');
+
+                // Magic HR search parsing
+                let resultsHTML = '';
+
+                // 1. Check for natural language absences
+                if(q.includes('absent') || q.includes('missed') || q.includes('unexcused')) {
+                    const absentees = findRecentAbsentees();
+                    resultsHTML += `<div class="px-4 py-2 bg-rose-50 text-xs font-bold text-rose-800 uppercase tracking-wider border-b border-rose-100">Recent Absences Trigger</div>`;
+                    if(absentees.length === 0) {
+                        resultsHTML += `<div class="p-4 text-xs text-slate-500 italic">No recent unexcused absences found.</div>`;
+                    } else {
+                        absentees.forEach(a => {
+                            resultsHTML += `
+                                <div class="px-4 py-3 hover:bg-slate-50 cursor-pointer flex justify-between items-center" onclick="openStaffProfile('${a.name}')">
+                                    <div class="text-sm font-medium text-slate-900">${a.name}</div>
+                                    <div class="text-xs text-rose-600 font-semibold bg-rose-50 px-2 py-0.5 rounded">${a.count} Absences</div>
+                                </div>
+                            `;
+                        });
+                    }
+                }
+
+                // 2. Standard Staff Search
+                const matchedStaff = state.staffList.filter(s => s.full_name.toLowerCase().includes(q) || s.role.toLowerCase().includes(q)).slice(0, 5);
+                if(matchedStaff.length > 0) {
+                    resultsHTML += `<div class="px-4 py-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">Staff Directory</div>`;
+                    matchedStaff.forEach(s => {
+                        resultsHTML += `
+                            <div class="px-4 py-3 hover:bg-slate-50 cursor-pointer flex items-center gap-3" onclick="openStaffProfile('${s.full_name}')">
+                                <i data-lucide="user" class="w-4 h-4 text-slate-400"></i>
+                                <div>
+                                    <div class="text-sm font-medium text-slate-900">${s.full_name}</div>
+                                    <div class="text-[10px] text-slate-500">${s.role}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                // 3. Standard Session Search
+                const matchedSessions = state.sessions.filter(s => s.session_title.toLowerCase().includes(q) || s.session_date.includes(q)).slice(0, 5);
+                if(matchedSessions.length > 0) {
+                    resultsHTML += `<div class="px-4 py-2 bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100 border-t border-slate-100">Sessions</div>`;
+                    matchedSessions.forEach(s => {
+                        resultsHTML += `
+                            <div class="px-4 py-3 hover:bg-slate-50 cursor-pointer flex items-center gap-3" onclick="openDayModal('${s.session_date}')">
+                                <i data-lucide="calendar" class="w-4 h-4 text-slate-400"></i>
+                                <div>
+                                    <div class="text-sm font-medium text-slate-900">${s.session_title}</div>
+                                    <div class="text-[10px] text-slate-500">${s.session_date} • Host: ${s.host_name}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                if(resultsHTML === '') {
+                    dropdown.innerHTML = `<div class="p-4 text-sm text-slate-500 text-center">No results found for "${q}"</div>`;
+                } else {
+                    dropdown.innerHTML = resultsHTML;
+                    lucide.createIcons();
+                }
+            });
+        }
+
+        function findRecentAbsentees() {
+            // Looks at all attendance records for 'U' status
+            const missingCounts = {};
+            state.attendance.forEach(att => {
+                if(att.session_status === 'U' || att.debrief_status === 'U') {
+                    missingCounts[att.staff_name] = (missingCounts[att.staff_name] || 0) + 1;
+                }
+            });
+            return Object.keys(missingCounts).map(name => ({name, count: missingCounts[name]})).sort((a,b) => b.count - a.count).slice(0,5);
+        }
+
+        // --- STAFF PROFILE LOGIC (HR) ---
+        function openStaffProfile(staffName) {
+            // Close search dropdown if open
+            document.getElementById('search-results-dropdown').classList.add('hidden');
+            document.getElementById('global-search').value = '';
+
+            const staffObj = state.staffList.find(s => s.full_name === staffName);
+            if(!staffObj) return;
+
+            document.getElementById('profile-name').textContent = staffObj.full_name;
+            document.getElementById('profile-role').textContent = staffObj.role || 'Unassigned Role';
+            
+            const initials = staffObj.full_name.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase();
+            document.getElementById('profile-initials').textContent = initials;
+
+            // Compute Staff Stats
+            const staffHistory = state.attendance.filter(a => a.staff_name === staffName);
+            const totalSess = staffHistory.length;
+            let presentCount = 0;
+            let uCount = 0;
+
+            const historyHtmlArray = [];
+            const trendData = [];
+            const trendLabels = [];
+
+            // Sort history by date (requires mapping to session data)
+            const enrichedHistory = staffHistory.map(att => {
+                const sessInfo = state.sessions.find(s => s.id === att.session_id);
+                return { ...att, date: sessInfo ? sessInfo.session_date : 'Unknown', title: sessInfo ? sessInfo.session_title : 'Unknown' };
+            }).sort((a, b) => new Date(b.date) - new Date(a.date));
+
+            enrichedHistory.forEach((record, index) => {
+                if(record.session_status === 'P') presentCount++;
+                if(record.session_status === 'U') uCount++;
+
+                // Build trend data (for last 10 sessions, chronologically)
+                if(index < 10) {
+                    trendLabels.unshift(record.date.substring(5)); // Just MM-DD
+                    trendData.unshift(record.session_status === 'P' || record.session_status === 'L' ? 100 : (record.session_status === 'U' ? 0 : 50));
+                }
+
+                // Build UI list
+                let statusColor = record.session_status === 'P' ? 'text-emerald-600 bg-emerald-50' : 
+                                 (record.session_status === 'U' ? 'text-rose-600 bg-rose-50' : 'text-amber-600 bg-amber-50');
+
+                historyHtmlArray.push(`
+                    <div class="px-4 py-3 flex justify-between items-center hover:bg-slate-50">
+                        <div>
+                            <div class="text-sm font-medium text-slate-900">${record.title}</div>
+                            <div class="text-[10px] text-slate-400">${record.date}</div>
+                        </div>
+                        <div class="px-2.5 py-1 rounded-md text-xs font-bold ${statusColor}">
+                            ${record.session_status}
+                        </div>
+                    </div>
+                `);
+            });
+
+            document.getElementById('profile-stat-sessions').textContent = totalSess;
+            document.getElementById('profile-stat-overall').textContent = totalSess ? Math.round((presentCount/totalSess)*100) + '%' : '0%';
+            document.getElementById('profile-stat-u').textContent = uCount;
+
+            document.getElementById('profile-history-list').innerHTML = historyHtmlArray.length > 0 ? historyHtmlArray.join('') : '<div class="p-4 text-xs text-slate-400 text-center">No attendance history logged.</div>';
+
+            // Calculate Trend Badge
+            const badge = document.getElementById('profile-trend-badge');
+            if(trendData.length >= 2) {
+                const recent = trendData[trendData.length-1];
+                const prev = trendData[trendData.length-2];
+                if(recent >= prev && recent > 50) { badge.textContent = "Stable/Improving"; badge.className = "px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-100 text-emerald-700"; }
+                else if (recent < prev) { badge.textContent = "Declining"; badge.className = "px-2 py-0.5 text-[10px] font-bold rounded bg-rose-100 text-rose-700"; }
+                else { badge.textContent = "Variable"; badge.className = "px-2 py-0.5 text-[10px] font-bold rounded bg-amber-100 text-amber-700"; }
+            } else {
+                badge.textContent = "Insufficient Data"; badge.className = "px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 text-slate-500";
+            }
+
+            renderChart('chart-staff-profile', 'line', trendLabels, [{
+                label: 'Attendance Value',
+                data: trendData,
+                borderColor: '#10b981', // emerald-500
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                fill: true,
+                tension: 0.4
+            }], {
+                scales: { y: { min: 0, max: 110, ticks: { display: false } } },
+                plugins: { legend: { display: false } }
+            });
+
+            document.getElementById('modal-profile').classList.remove('hidden');
+        }
+
+        function closeProfileModal() {
+            document.getElementById('modal-profile').classList.add('hidden');
+        }
+
+        // --- SESSION REGISTRATION VIEWS ---
+        function openDayModal(dateStr) {
+            state.selectedDateStr = dateStr;
+            state.selectedSessionId = null;
+            document.getElementById('modal-date-hdr').textContent = new Date(dateStr).toLocaleDateString('en-GB', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+            
+            toggleCreatePanel(false);
+            refreshModalSessionsList();
+            
+            document.getElementById('active-register-title').textContent = "Select an existing session or start a new track";
+            document.getElementById('active-register-host').textContent = "";
+            document.getElementById('attendance-roster-rows').innerHTML = `
+                <div class="p-8 text-center text-sm text-slate-400">No session actively highlighted. Click an item on the left panel directory.</div>
+            `;
+            document.getElementById('modal-day').classList.remove('hidden');
+        }
+
+        function closeDayModal() {
+            document.getElementById('modal-day').classList.add('hidden');
+            renderCalendarGrid(); 
+        }
+
+        function toggleCreatePanel(show) {
+            const panel = document.getElementById('panel-create-session');
+            if (show) { panel.classList.remove('hidden'); document.getElementById('new-session-title').focus(); } 
+            else { panel.classList.add('hidden'); document.getElementById('new-session-title').value = ''; }
+        }
+
+        function refreshModalSessionsList() {
+            const container = document.getElementById('session-list-group');
+            container.innerHTML = '';
+            const daySessions = state.sessions.filter(s => s.session_date === state.selectedDateStr);
+            
+            if(daySessions.length === 0) {
+                container.innerHTML = `<div class="text-xs text-slate-400 p-2 italic bg-slate-50 rounded-lg text-center border border-dashed border-slate-200">No active sessions</div>`;
+                return;
+            }
+
+            daySessions.forEach(s => {
+                const activeHighlight = state.selectedSessionId === s.id;
+                const btn = document.createElement('button');
+                btn.className = `w-full text-left p-3 rounded-xl border transition-all cursor-pointer block ${activeHighlight ? 'bg-slate-950 text-white shadow-xs' : 'bg-white hover:bg-slate-50'}`;
+                btn.onclick = () => loadSessionRegister(s.id);
+                btn.innerHTML = `<div class="text-xs font-semibold truncate">${s.session_title}</div><div class="text-[10px] mt-1 ${activeHighlight ? 'text-slate-300' : 'text-slate-400'}">Host: ${s.host_name}</div>`;
+                container.appendChild(btn);
+            });
+        }
+
+        async function submitNewSession() {
+            if(state.role !== 'SLT') return;
+            const title = document.getElementById('new-session-title').value.trim();
+            if (!title) return alert("Please declare a title.");
+
+            try {
+                const { data, error } = await sbData.from('sessions').insert([{ session_date: state.selectedDateStr, host_name: state.user, session_title: title }]).select();
+                if (error) throw error;
+                await refreshDataCache();
+                toggleCreatePanel(false);
+                refreshModalSessionsList();
+                if (data && data[0]) loadSessionRegister(data[0].id);
+            } catch (err) { alert("Failed to save session."); }
+        }
+
+        function loadSessionRegister(sessionId) {
+            state.selectedSessionId = sessionId;
+            refreshModalSessionsList();
+            const sessionObj = state.sessions.find(s => s.id === sessionId);
+            if (!sessionObj) return;
+
+            document.getElementById('active-register-title').textContent = sessionObj.session_title;
+            document.getElementById('active-register-host').textContent = `Host: ${sessionObj.host_name}`;
+
+            const rosterContainer = document.getElementById('attendance-roster-rows');
+            rosterContainer.innerHTML = '';
+            const activeSessionAtt = state.attendance.filter(a => a.session_id === sessionId);
+
+            state.staffList.forEach(staff => {
+                const recordedData = activeSessionAtt.find(a => a.staff_name === staff.full_name);
+                const sStatus = recordedData ? recordedData.session_status : "P";
+                const dStatus = recordedData ? recordedData.debrief_status : "P";
+
+                const row = document.createElement('div');
+                row.className = "grid grid-cols-12 px-4 py-2.5 items-center hover:bg-slate-50 transition-all border-b border-slate-50 last:border-0";
+
+                const metaCol = document.createElement('div');
+                metaCol.className = "col-span-6 pr-2 cursor-pointer group";
+                metaCol.onclick = () => openStaffProfile(staff.full_name); // Link to HR Profile
+                metaCol.innerHTML = `
+                    <div class="text-xs font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">${staff.full_name}</div>
+                    <div class="text-[10px] text-slate-400 font-mono">${staff.role || 'Unassigned Role'}</div>
+                `;
+                row.appendChild(metaCol);
+
+                const sessCol = document.createElement('div');
+                sessCol.className = "col-span-3 flex justify-center";
+                sessCol.appendChild(createStatusDropdownSelector(staff.full_name, 'session', sStatus));
+                row.appendChild(sessCol);
+
+                const debCol = document.createElement('div');
+                debCol.className = "col-span-3 flex justify-center";
+                debCol.appendChild(createStatusDropdownSelector(staff.full_name, 'debrief', dStatus));
+                row.appendChild(debCol);
+
+                rosterContainer.appendChild(row);
+            });
+
+            document.getElementById('btn-save-attendance').onclick = () => saveActiveRosterDataset(sessionId);
+        }
+
+        function createStatusDropdownSelector(staffName, typeKey, activeVal) {
+            const select = document.createElement('select');
+            select.dataset.staff = staffName;
+            select.dataset.type = typeKey;
+            select.className = "px-2 py-1 text-xs border border-slate-200 bg-white text-slate-800 rounded-md focus:border-slate-900 cursor-pointer font-medium";
+            if(state.role !== 'SLT') { select.disabled = true; select.className += " opacity-80 cursor-not-allowed bg-slate-50"; }
+            ATTENDANCE_CODES.forEach(code => {
+                const opt = document.createElement('option');
+                opt.value = code; opt.textContent = code;
+                if(code === activeVal) opt.selected = true;
+                select.appendChild(opt);
+            });
+            return select;
+        }
+
+        async function saveActiveRosterDataset(sessionId) {
+            if (state.role !== 'SLT') return;
+            const rows = document.getElementById('attendance-roster-rows').querySelectorAll('select');
+            const mappedRecords = {};
+            
+            rows.forEach(select => {
+                const name = select.dataset.staff;
+                const type = select.dataset.type;
+                if(!mappedRecords[name]) {
+                    const matchRole = state.staffList.find(s => s.full_name === name);
+                    mappedRecords[name] = { session_id: sessionId, staff_name: name, staff_role: matchRole ? matchRole.role : 'Staff', session_status: 'P', debrief_status: 'P' };
+                }
+                if(type === 'session') mappedRecords[name].session_status = select.value;
+                if(type === 'debrief') mappedRecords[name].debrief_status = select.value;
+            });
+
+            try {
+                await sbData.from('attendance').delete().eq('session_id', sessionId);
+                await sbData.from('attendance').insert(Object.values(mappedRecords));
+                alert("Roster metrics saved successfully.");
+                await refreshDataCache();
+            } catch(err) { alert("Failed to store attendance."); }
+        }
+
+        // --- CHART CONTROLLER UTILITY ---
+        function renderChart(canvasId, type, labels, datasets, options = {}) {
+            const ctx = document.getElementById(canvasId);
+            if(window.chartRegistry[canvasId]) {
+                window.chartRegistry[canvasId].destroy(); // Prevents memory leaks and overlapping charts
+            }
+            window.chartRegistry[canvasId] = new Chart(ctx, {
+                type: type,
+                data: { labels: labels, datasets: datasets },
+                options: Object.assign({ responsive: true, maintainAspectRatio: false }, options)
+            });
+        }
+
+        // --- FULL HR ANALYTICS DASHBOARD ---
+        function calculateAnalytics() {
+            const feedBody = document.getElementById('analytics-table-body');
+            feedBody.innerHTML = '';
+
+            const totalSessions = state.sessions.length;
+            document.getElementById('stat-total-sessions').textContent = totalSessions;
+
+            if (totalSessions === 0) return;
+
+            let gSessCount = 0, gSessP = 0, gDebP = 0, gUCount = 0;
+            const sortedSessions = [...state.sessions].sort((a,b) => new Date(b.session_date) - new Date(a.session_date));
+
+            // Chart Data Arrays
+            const recentLabels = [];
+            const recentAttData = [];
+
+            sortedSessions.forEach((sess, index) => {
+                const sessionAtts = state.attendance.filter(a => a.session_id === sess.id);
+                let lSessP = 0, lDebP = 0;
+                
+                sessionAtts.forEach(att => {
+                    gSessCount++;
+                    if(att.session_status === 'P') { gSessP++; lSessP++; }
+                    if(att.debrief_status === 'P') { gDebP++; lDebP++; }
+                    if(att.session_status === 'U' || att.debrief_status === 'U') gUCount++;
+                });
+
+                const rate = sessionAtts.length ? Math.round((lSessP / sessionAtts.length) * 100) : 0;
+                const dRate = sessionAtts.length ? Math.round((lDebP / sessionAtts.length) * 100) : 0;
+
+                // Grab last 5 for chart (reverse order for L to R chart rendering)
+                if (index < 5) {
+                    recentLabels.unshift(sess.session_date.substring(5)); // 'MM-DD'
+                    recentAttData.unshift(rate);
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50/60 transition-all text-xs";
+                tr.innerHTML = `
+                    <td class="py-3 px-4 font-mono text-slate-500">${sess.session_date}</td>
+                    <td class="py-3 px-4">
+                        <div class="font-medium text-slate-900">${sess.session_title}</div>
+                        <div class="text-[10px] text-slate-400">Host: ${sess.host_name}</div>
+                    </td>
+                    <td class="py-3 px-4 text-center font-semibold text-emerald-600">${rate}%</td>
+                    <td class="py-3 px-4 text-center font-semibold text-indigo-600">${dRate}%</td>
+                `;
+                feedBody.appendChild(tr);
+            });
+
+            // Top Line Stats
+            document.getElementById('stat-session-rate').textContent = gSessCount ? Math.round((gSessP / gSessCount) * 100) + '%' : '0%';
+            document.getElementById('stat-debrief-rate').textContent = gSessCount ? Math.round((gDebP / gSessCount) * 100) + '%' : '0%';
+            document.getElementById('stat-unexcused').textContent = gUCount;
+
+            // Chart 1: Attendance Trend
+            renderChart('chart-attendance-trend', 'bar', recentLabels, [{
+                label: 'Avg Attendance %',
+                data: recentAttData,
+                backgroundColor: '#0f172a', // slate-900
+                borderRadius: 4
+            }], { scales: { y: { min: 0, max: 100 } }});
+
+            // Calculate SLT vs Staff Role Comparison
+            let sltTotal = 0, sltPresent = 0, staffTotal = 0, staffPresent = 0;
+            state.attendance.forEach(att => {
+                const isSLT = att.staff_role.toLowerCase().includes('slt');
+                if(isSLT) { sltTotal++; if(att.session_status === 'P') sltPresent++; } 
+                else { staffTotal++; if(att.session_status === 'P') staffPresent++; }
+            });
+
+            const sltRate = sltTotal ? (sltPresent/sltTotal)*100 : 0;
+            const staffRate = staffTotal ? (staffPresent/staffTotal)*100 : 0;
+
+            // Chart 2: Role Comparison
+            renderChart('chart-role-comparison', 'doughnut', ['SLT Rate', 'Staff Rate'], [{
+                data: [sltRate, staffRate],
+                backgroundColor: ['#6366f1', '#10b981'], // indigo, emerald
+                borderWidth: 0
+            }], { cutout: '70%', plugins: { legend: { position: 'bottom' } }});
+
+            // HR Flags: Most Absent
+            const absentees = findRecentAbsentees();
+            const flagsContainer = document.getElementById('hr-flags-container');
+            flagsContainer.innerHTML = '';
+            
+            if(absentees.length === 0) {
+                flagsContainer.innerHTML = `<div class="p-4 bg-slate-50 border border-dashed border-slate-200 rounded-lg text-xs text-center text-slate-500">All staff showing strong punctuality.</div>`;
+            } else {
+                absentees.forEach((a, i) => {
+                    const medal = i === 0 ? 'text-rose-600 bg-rose-100' : 'text-slate-500 bg-slate-100';
+                    flagsContainer.innerHTML += `
+                        <div class="p-3 border border-slate-100 rounded-lg flex justify-between items-center bg-white cursor-pointer hover:border-slate-300 transition-all" onclick="openStaffProfile('${a.name}')">
+                            <div class="flex items-center gap-3">
+                                <div class="w-6 h-6 rounded flex items-center justify-center text-[10px] font-bold ${medal}">#${i+1}</div>
+                                <div class="text-xs font-semibold text-slate-900">${a.name}</div>
+                            </div>
+                            <div class="text-xs font-bold text-rose-600">${a.count} U</div>
+                        </div>
+                    `;
+                });
+            }
+        }
+    </script>
+</body>
+</html>
