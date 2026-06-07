@@ -319,7 +319,8 @@
         // --- BOOT & EVENTS ---
         document.addEventListener('DOMContentLoaded', () => {
             lucide.createIcons();
-            setupLoginHandlers();
+            // Try to restore a persisted login; if none, wire up login handlers
+            if(!tryRestoreLogin()) setupLoginHandlers();
             setupNavigation();
             setupCalendarControls();
             setupGlobalSearch();
@@ -350,15 +351,31 @@
                 errDiv.classList.add('hidden');
 
                 if (selectedTier === 'STAFF' && pass === 'staff') {
+                    localStorage.setItem('att_login', JSON.stringify({ username: name, role: selectedTier, expiry: Date.now() + (24 * 60 * 60 * 1000) }));
                     bootApp(name, 'STAFF');
                 } else if (selectedTier === 'SLT' && pass === 'admin26') {
+                    localStorage.setItem('att_login', JSON.stringify({ username: name, role: selectedTier, expiry: Date.now() + (24 * 60 * 60 * 1000) }));
                     bootApp(name, 'SLT');
                 } else {
                     errDiv.classList.remove('hidden');
                 }
             });
 
-            document.getElementById('btn-logout').addEventListener('click', () => location.reload());
+            document.getElementById('btn-logout').addEventListener('click', () => { localStorage.removeItem('att_login'); location.reload(); });
+        }
+
+        // Try to restore persisted login (valid for 24 hours)
+        function tryRestoreLogin() {
+            try {
+                const raw = localStorage.getItem('att_login');
+                if(!raw) return false;
+                const obj = JSON.parse(raw);
+                if(!obj || !obj.username || !obj.role || !obj.expiry) return false;
+                if(Date.now() > obj.expiry) { localStorage.removeItem('att_login'); return false; }
+                // Boot app with persisted credentials
+                bootApp(obj.username, obj.role);
+                return true;
+            } catch (e) { console.error('Restore login error', e); return false; }
         }
 
         async function bootApp(username, userRole) {
@@ -807,8 +824,8 @@
 
             state.staffList.forEach(staff => {
                 const recordedData = activeSessionAtt.find(a => a.staff_name === staff.full_name);
-                const sStatus = recordedData ? recordedData.session_status : "P";
-                const dStatus = recordedData ? recordedData.debrief_status : "P";
+                const sStatus = recordedData ? recordedData.session_status : "N/A";
+                const dStatus = recordedData ? recordedData.debrief_status : "N/A";
 
                 const row = document.createElement('div');
                 row.className = "grid grid-cols-12 px-4 py-2.5 items-center hover:bg-slate-50 transition-all border-b border-slate-50 last:border-0";
@@ -863,7 +880,7 @@
                 const type = select.dataset.type;
                 if(!mappedRecords[name]) {
                     const matchRole = state.staffList.find(s => s.full_name === name);
-                    mappedRecords[name] = { session_id: sessionId, staff_name: name, staff_role: matchRole ? matchRole.role : 'Staff', session_status: 'P', debrief_status: 'P' };
+                    mappedRecords[name] = { session_id: sessionId, staff_name: name, staff_role: matchRole ? matchRole.role : 'Staff', session_status: 'N/A', debrief_status: 'N/A' };
                 }
                 if(type === 'session') mappedRecords[name].session_status = select.value;
                 if(type === 'debrief') mappedRecords[name].debrief_status = select.value;
