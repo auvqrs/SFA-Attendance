@@ -429,8 +429,11 @@
         // --- DATA FETCHING ---
         async function fetchStaffRoster() {
             try {
-                const { data, error } = await sbStaff.from('staff').select('full_name, role').order('full_name', { ascending: true });
-                if (!error) state.staffList = data || [];
+                const { data, error } = await sbStaff.from('staff')
+                    .select('full_name, role, status')
+                    .neq('status', 'Former')
+                    .order('full_name', { ascending: true });
+                if (!error) state.staffList = (data || []).filter(s => s.status !== 'Former');
             } catch (err) { console.error("Staff fetch error:", err); }
         }
 
@@ -640,10 +643,16 @@
             });
         }
 
+        function getActiveStaffNames() {
+            return new Set(state.staffList.map(staff => staff.full_name));
+        }
+
         function findRecentAbsentees() {
-            // Looks at all attendance records for 'U' status
+            // Looks at all attendance records for 'U' status from active staff only
+            const activeStaff = getActiveStaffNames();
             const missingCounts = {};
             state.attendance.forEach(att => {
+                if(!activeStaff.has(att.staff_name)) return;
                 if(att.session_status === 'U' || att.debrief_status === 'U') {
                     missingCounts[att.staff_name] = (missingCounts[att.staff_name] || 0) + 1;
                 }
@@ -924,8 +933,9 @@
             const recentLabels = [];
             const recentAttData = [];
 
+            const activeStaff = getActiveStaffNames();
             sortedSessions.forEach((sess, index) => {
-                const sessionAtts = state.attendance.filter(a => a.session_id === sess.id);
+                const sessionAtts = state.attendance.filter(a => a.session_id === sess.id && activeStaff.has(a.staff_name));
                 let lSessP = 0, lDebP = 0;
                 
                 sessionAtts.forEach(att => {
@@ -974,6 +984,7 @@
             // Calculate SLT vs Staff Role Comparison
             let sltTotal = 0, sltPresent = 0, staffTotal = 0, staffPresent = 0;
             state.attendance.forEach(att => {
+                if(!activeStaff.has(att.staff_name)) return;
                 const isSLT = att.staff_role.toLowerCase().includes('slt');
                 if(isSLT) { sltTotal++; if(att.session_status === 'P') sltPresent++; } 
                 else { staffTotal++; if(att.session_status === 'P') staffPresent++; }
